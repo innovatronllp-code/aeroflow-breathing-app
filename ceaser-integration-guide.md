@@ -12,7 +12,7 @@ When embedding AeroFlow into a web-based dashboard or web view inside the Ceaser
 <!-- Important: allow="microphone" is strictly required for breath detection -->
 <iframe
   id="aeroflow-frame"
-  src="YOUR_HOSTED_HTTPS_URL"
+  src="https://innovatronllp-code.github.io/aeroflow-breathing-app/"
   style="width: 100%; height: 900px; border: none; border-radius: 16px; overflow: hidden;"
   allow="microphone"
   allowfullscreen>
