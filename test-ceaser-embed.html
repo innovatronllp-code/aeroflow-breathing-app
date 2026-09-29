@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ceaser App // AeroFlow Simulator Harness</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 20px;
+    }
+    .header {
+      background: #1e293b;
+      padding: 16px 24px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .header h1 { font-size: 20px; color: #38bdf8; }
+    .badge {
+      background: rgba(56, 189, 248, 0.15);
+      color: #38bdf8;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 420px;
+      gap: 20px;
+    }
+    @media (max-width: 1024px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    .frame-card {
+      background: #1e293b;
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    iframe {
+      width: 100%;
+      height: 850px;
+      border: none;
+      display: block;
+    }
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .panel {
+      background: #1e293b;
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .panel h2 {
+      font-size: 16px;
+      margin-bottom: 14px;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    button {
+      background: #334155;
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 10px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    button:hover {
+      background: #0284c7;
+      border-color: #38bdf8;
+      transform: translateY(-1px);
+    }
+    button.primary {
+      background: #0284c7;
+    }
+    .event-log {
+      background: #020617;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 12px;
+      max-height: 400px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column-reverse;
+      gap: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    .log-item {
+      padding: 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.03);
+      border-left: 3px solid #38bdf8;
+    }
+    .log-item.session { border-left-color: #22c55e; }
+    .log-item.rep { border-left-color: #eab308; }
+    .log-time { color: #64748b; font-size: 10px; margin-bottom: 4px; }
+    .metric-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      font-size: 13px;
+    }
+    .metric-row:last-child { border-bottom: none; }
+    .metric-label { color: #94a3b8; }
+    .metric-value { font-weight: bold; color: #f8fafc; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div>
+      <h1>Ceaser App Simulation Harness</h1>
+      <p style="color: #94a3b8; font-size: 13px; margin-top: 4px;">Host Environment testing bidirectional postMessage bridge</p>
+    </div>
+    <div class="badge" id="host-status">Listening for AeroFlow...</div>
+  </div>
+
+  <div class="layout">
+    
+    <!-- Embedded Iframe -->
+    <div class="frame-card">
+      <iframe id="aeroflow-frame" src="index.html" allow="microphone" allowfullscreen></iframe>
+    </div>
+
+    <!-- Ceaser App Host Controls & Live Event Stream -->
+    <div class="sidebar">
+      
+      <!-- Command Dispatcher -->
+      <div class="panel">
+        <h2>Ceaser Host Controls</h2>
+        <div class="btn-group">
+          <button onclick="sendCommand('AEROFLOW_START_SESSION')" class="primary">Start Session</button>
+          <button onclick="sendCommand('AEROFLOW_STOP_SESSION')">Stop Session</button>
+          <button onclick="sendCommand('AEROFLOW_SET_MODE', { mode: 'inhale' })">Set Inhale</button>
+          <button onclick="sendCommand('AEROFLOW_SET_MODE', { mode: 'exhale' })">Set Exhale</button>
+          <button onclick="sendCommand('AEROFLOW_SET_DIFFICULTY', { difficulty: 'easy' })">Easy</button>
+          <button onclick="sendCommand('AEROFLOW_SET_DIFFICULTY', { difficulty: 'medium' })">Medium</button>
+          <button onclick="sendCommand('AEROFLOW_SET_DIFFICULTY', { difficulty: 'hard' })">Hard</button>
+          <button onclick="sendCommand('AEROFLOW_GET_STATS')">Get Stats</button>
+          <button onclick="sendCommand('AEROFLOW_PING')">Ping Host</button>
+        </div>
+      </div>
+
+      <!-- Latest Session Metrics Received -->
+      <div class="panel">
+        <h2>Latest Patient Metrics</h2>
+        <div class="metric-row">
+          <span class="metric-label">Lung Performance Index (LPI):</span>
+          <span class="metric-value" id="disp-lpi">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Peak Flow Capacity:</span>
+          <span class="metric-value" id="disp-peak">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Sustained Breath Time:</span>
+          <span class="metric-value" id="disp-sustained">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Flow Steadiness (Stability):</span>
+          <span class="metric-value" id="disp-stability">--</span>
+        </div>
+        <div class="metric-row">
+          <span class="metric-label">Estimated Vital Volume:</span>
+          <span class="metric-value" id="disp-volume">--</span>
+        </div>
+      </div>
+
+      <!-- Live Event Log -->
+      <div class="panel" style="flex: 1;">
+        <h2>Incoming postMessage Log</h2>
+        <div class="event-log" id="event-log">
+          <div class="log-item">
+            <div class="log-time">Waiting for first message from AeroFlow iframe...</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    const frame = document.getElementById('aeroflow-frame');
+    const logContainer = document.getElementById('event-log');
+    const statusBadge = document.getElementById('host-status');
+
+    function sendCommand(type, payload = {}) {
+      if (frame && frame.contentWindow) {
+        frame.contentWindow.postMessage({ type, ...payload }, '*');
+        addLog(`[Ceaser -> AeroFlow] Sent: ${type} ${JSON.stringify(payload)}`, 'cmd');
+      }
+    }
+
+    window.addEventListener('message', (event) => {
+      const data = event.data;
+      if (!data || data.source !== 'aeroflow') return;
+
+      statusBadge.textContent = 'Connected: AeroFlow Active';
+      statusBadge.style.color = '#22c55e';
+      statusBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+
+      let logClass = '';
+      if (data.type === 'AEROFLOW_SESSION_COMPLETE') {
+        logClass = 'session';
+        const p = data.payload;
+        document.getElementById('disp-lpi').textContent = `${p.lpi}%`;
+        document.getElementById('disp-peak').textContent = `${p.peak}%`;
+        document.getElementById('disp-sustained').textContent = `${p.sustained}s`;
+        document.getElementById('disp-stability').textContent = `${p.stability}%`;
+        document.getElementById('disp-volume').textContent = `${p.volume} L`;
+      } else if (data.type === 'AEROFLOW_REP_COMPLETE') {
+        logClass = 'rep';
+      }
+
+      addLog(`[AeroFlow -> Ceaser] ${data.type}: ${JSON.stringify(data.payload)}`, logClass);
+    });
+
+    function addLog(text, className = '') {
+      const item = document.createElement('div');
+      item.className = 'log-item ' + className;
+      item.innerHTML = `
+        <div class="log-time">${new Date().toLocaleTimeString()}</div>
+        <div>${text}</div>
+      `;
+      logContainer.prepend(item);
+    }
+  </script>
+
+</body>
+</html>
