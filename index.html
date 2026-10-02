@@ -23,12 +23,13 @@
   <!-- ChartJS for beautiful interactive charts -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-  <link rel="stylesheet" href="style.css">
+  <!-- Cache-busting for mobile WebViews -->
+  <link rel="stylesheet" href="style.css?v=4.0">
 </head>
 <body>
   <div class="app-container">
     
-    <!-- Top Sleek Header -->
+    <!-- Top Sleek Header (Hidden automatically when inside Ceaser app) -->
     <header class="app-header">
       <div class="logo-area">
         <div class="logo-glow"></div>
@@ -49,15 +50,14 @@
 
     <div class="main-layout">
       
-      <!-- Left Control Panel -->
-      <aside class="control-panel glass-card">
-        <div class="panel-section">
-          <h2><i data-lucide="sliders"></i> Settings</h2>
-          
-          <!-- Inhale / Exhale Toggle -->
-          <div class="mode-toggle-container">
-            <span class="label">Training Mode</span>
-            <div class="toggle-group">
+      <!-- Center Spirometer visualizer & Pacer (Always FIRST for instant mobile visibility) -->
+      <main class="visualizer-container">
+        
+        <!-- Quick Mode & Difficulty Selector Bar (Top Controls) -->
+        <div class="quick-controls-bar glass-card">
+          <div class="quick-control-group">
+            <span class="quick-label">Mode:</span>
+            <div class="toggle-group-compact">
               <button id="mode-inhale" class="toggle-btn" onclick="setMode('inhale')">
                 <i data-lucide="log-in"></i> Inhale
               </button>
@@ -66,11 +66,9 @@
               </button>
             </div>
           </div>
-
-          <!-- Difficulty Selector -->
-          <div class="difficulty-container">
-            <span class="label">Difficulty Threshold</span>
-            <div class="difficulty-group">
+          <div class="quick-control-group">
+            <span class="quick-label">Difficulty:</span>
+            <div class="difficulty-group-compact">
               <button id="diff-easy" class="diff-btn active" onclick="setDifficulty('easy')">Easy</button>
               <button id="diff-medium" class="diff-btn" onclick="setDifficulty('medium')">Medium</button>
               <button id="diff-hard" class="diff-btn" onclick="setDifficulty('hard')">Hard</button>
@@ -78,72 +76,19 @@
           </div>
         </div>
 
-        <div class="panel-section">
-          <h2><i data-lucide="mic"></i> Breath Input</h2>
-          <p class="section-desc">Blow steadily into your mic like the physical exerciser. Shouting or talking is filtered out — only airflow lifts the balls.</p>
-          <button id="btn-enable-mic" class="btn btn-primary btn-full" onclick="enableMicrophone()">
-            <i data-lucide="mic"></i> Enable Microphone
-          </button>
-          <button id="btn-calibrate" class="btn btn-secondary btn-full hidden" onclick="startCalibrationModal()">
-            <i data-lucide="settings-2"></i> Fine-Tune Calibration
-          </button>
-
-          <div class="noise-cancel-row">
-            <label class="noise-cancel-toggle">
-              <input type="checkbox" id="noise-cancel-toggle" checked onchange="setNoiseCancellation(this.checked)">
-              <span>Noise Cancellation</span>
-            </label>
-            <button id="btn-rescan-noise" class="btn btn-secondary btn-sm hidden" onclick="rescanNoiseProfile()">
-              <i data-lucide="volume-x"></i> Re-scan Room
-            </button>
-          </div>
-          <span id="noise-floor-label" class="noise-floor-label">Noise cancellation ON after mic enable</span>
-
-          <div class="calibration-indicator">
-            <div class="indicator-bar-bg">
-              <div id="mic-live-bar" class="indicator-bar-fill"></div>
-            </div>
-            <span id="mic-live-label" class="indicator-label">Mic inactive — click Enable above</span>
-          </div>
-          <div id="live-flow-readout" class="live-flow-readout">
-            <span class="label">Live Airflow</span>
-            <strong id="live-flow-value">0 cc/s</strong>
-          </div>
-          <span id="input-type-status" class="input-type-status idle">Waiting for breath…</span>
-        </div>
-
-        <div class="panel-section action-section">
-          <button id="btn-session" class="btn btn-primary btn-full btn-glowing" onclick="toggleSession()">
-            <i data-lucide="play" id="session-icon"></i> <span id="session-text">Start Training</span>
-          </button>
-          <span class="rep-counter">Repetition: <strong id="current-rep">0</strong> / <strong id="total-reps">5</strong></span>
-        </div>
-      </aside>
-
-      <!-- Center Spirometer visualizer & Pacer -->
-      <main class="visualizer-container">
-        
-        <!-- Pacer and Spirometer grid -->
+        <!-- Spirometer and Pacer Grid -->
         <div class="visualizer-grid">
           
-          <!-- Pacer Ring -->
-          <div class="pacer-card glass-card">
-            <h3><i data-lucide="refresh-cw"></i> Guided Breath Pacer</h3>
-            <div class="pacer-outer">
-              <div id="pacer-ring" class="pacer-circle">
-                <div class="pacer-content">
-                  <span id="pacer-status" class="pacer-status-text">Ready</span>
-                  <span id="pacer-timer" class="pacer-timer-text">0s</span>
-                </div>
+          <!-- 3-Ball Spirometer Simulator (PRIMARY HERO ELEMENT) -->
+          <div class="spirometer-card glass-card">
+            <div class="spirometer-header-row">
+              <h3><i data-lucide="gauge"></i> 3-Ball Lung Exerciser</h3>
+              <div id="live-flow-readout" class="live-flow-badge">
+                <span class="label">Airflow:</span>
+                <strong id="live-flow-value">0 cc/s</strong>
               </div>
             </div>
-            <div id="pacer-hint" class="pacer-hint-text">Click "Start Training" to begin your lung capacity exercise.</div>
-          </div>
-
-          <!-- Spirometer Simulator -->
-          <div class="spirometer-card glass-card">
-            <h3><i data-lucide="gauge"></i> 3-Ball Lung Exerciser</h3>
-            <p id="spirometer-live-hint" class="spirometer-live-hint">Blow a steady stream of air into your microphone — shouting or talking won't lift the balls.</p>
+            <p id="spirometer-live-hint" class="spirometer-live-hint">Blow a steady stream of air into your microphone — only airflow lifts the balls.</p>
             
             <div class="spirometer-canvas-container">
               <canvas id="spirometer-canvas" width="360" height="420"></canvas>
@@ -160,10 +105,46 @@
               <div class="label-col"><span>1200</span><small>cc/sec</small></div>
             </div>
           </div>
+
+          <!-- Guided Breath Pacer Ring -->
+          <div class="pacer-card glass-card">
+            <h3><i data-lucide="refresh-cw"></i> Guided Breath Pacer</h3>
+            <div class="pacer-outer">
+              <div id="pacer-ring" class="pacer-circle">
+                <div class="pacer-content">
+                  <span id="pacer-status" class="pacer-status-text">Ready</span>
+                  <span id="pacer-timer" class="pacer-timer-text">0s</span>
+                </div>
+              </div>
+            </div>
+            <div id="pacer-hint" class="pacer-hint-text">Enable your mic, then blow to test the balls — or press "Start Training".</div>
+          </div>
           
         </div>
 
-        <!-- AI Coaching Coach Feedback Card -->
+        <!-- Primary Action Section (Directly below spirometer) -->
+        <div class="main-action-card glass-card">
+          <div class="action-buttons-row">
+            <button id="btn-enable-mic" class="btn btn-secondary" onclick="enableMicrophone()">
+              <i data-lucide="mic"></i> Enable Mic
+            </button>
+            <button id="btn-session" class="btn btn-primary btn-glowing" onclick="toggleSession()">
+              <i data-lucide="play" id="session-icon"></i> <span id="session-text">Start 5 Reps</span>
+            </button>
+          </div>
+          <div class="action-status-row">
+            <div class="calibration-indicator-compact">
+              <div class="indicator-bar-bg">
+                <div id="mic-live-bar" class="indicator-bar-fill"></div>
+              </div>
+              <span id="mic-live-label" class="indicator-label">Mic inactive</span>
+            </div>
+            <span class="rep-counter">Repetition: <strong id="current-rep">0</strong> / <strong id="total-reps">5</strong></span>
+          </div>
+          <span id="input-type-status" class="input-type-status idle">Waiting for breath…</span>
+        </div>
+
+        <!-- AI Coaching Feedback Card -->
         <div class="ai-coach-card glass-card">
           <div class="ai-coach-header">
             <div class="ai-avatar">
@@ -177,7 +158,7 @@
           </div>
           <div class="ai-coach-body">
             <div class="coach-bubble">
-              <p id="coach-feedback">Welcome to AeroFlow. Press "Start Training" and perform a breathing set. I will analyze your flow stability, capacity progression, and output professional guidance here.</p>
+              <p id="coach-feedback">Welcome to AeroFlow. Press "Start 5 Reps" and perform a breathing set. I will analyze your flow stability and output clinical guidance here.</p>
             </div>
             <div class="analytics-mini-grid">
               <div class="mini-stat">
@@ -197,6 +178,29 @@
         </div>
 
       </main>
+
+      <!-- Advanced Microphone & Calibration Settings (Placed below the main exercise) -->
+      <aside class="control-panel glass-card">
+        <div class="panel-section">
+          <h2><i data-lucide="sliders"></i> Microphone & Noise Settings</h2>
+          
+          <div class="noise-cancel-row">
+            <label class="noise-cancel-toggle">
+              <input type="checkbox" id="noise-cancel-toggle" checked onchange="setNoiseCancellation(this.checked)">
+              <span>Noise Cancellation</span>
+            </label>
+            <button id="btn-rescan-noise" class="btn btn-secondary btn-sm hidden" onclick="rescanNoiseProfile()">
+              <i data-lucide="volume-x"></i> Re-scan Room
+            </button>
+          </div>
+          <span id="noise-floor-label" class="noise-floor-label">Noise cancellation ON after mic enable</span>
+
+          <button id="btn-calibrate" class="btn btn-secondary btn-full" onclick="startCalibrationModal()">
+            <i data-lucide="settings-2"></i> Fine-Tune Calibration Wizard
+          </button>
+        </div>
+      </aside>
+
     </div>
 
     <!-- Bottom Analytics Dashboard -->
@@ -292,7 +296,7 @@
           <h4>Step 2: Peak Capacity Capture</h4>
           <p>We will calibrate your breathing style. When ready, click start and take a **deep deep breath** directly into the microphone for 5 seconds.</p>
           <div class="cal-type-display">
-            <span>Calibrating: <strong id="cal-type-label">Inhale</strong></span>
+            <span>Calibrating: <strong id="cal-type-label">Exhale</strong></span>
           </div>
           <button id="btn-cal-step2" class="btn btn-primary" onclick="calibrateBreathPeak()">
             <i data-lucide="activity"></i> Measure Max Breath (5s)
@@ -322,14 +326,17 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=4.0"></script>
   
-  <!-- PWA Service Worker Registration -->
+  <!-- PWA Service Worker Registration with Auto-Update -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js')
-          .then(reg => console.log('[PWA] Service Worker registered scope:', reg.scope))
+        navigator.serviceWorker.register('sw.js?v=4.0')
+          .then(reg => {
+            console.log('[PWA] Service Worker registered scope:', reg.scope);
+            reg.update(); // Force immediate update
+          })
           .catch(err => console.error('[PWA] Service Worker registration failed:', err));
       });
     }

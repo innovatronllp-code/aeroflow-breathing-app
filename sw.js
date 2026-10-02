@@ -1,4 +1,4 @@
-const CACHE_NAME = 'aeroflow-cache-v1';
+const CACHE_NAME = 'aeroflow-cache-v4';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -7,15 +7,12 @@ const ASSETS_TO_CACHE = [
   './manifest.json'
 ];
 
-// Install Event - cache assets
+// Install Event - cache assets and activate immediately
 self.addEventListener('install', (event) => {
+  self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME)
-      .then((cache) => {
-        console.log('[Service Worker] Caching App Shell');
-        return cache.addAll(ASSETS_TO_CACHE);
-      })
-      .then(() => self.skipWaiting())
+      .then((cache) => cache.addAll(ASSETS_TO_CACHE))
   );
 });
 
@@ -35,18 +32,19 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Fetch Event - network fallback to cache
+// Fetch Event - Network-First strategy (always get fresh version when online)
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request)
-      .then((cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse; // Return cache match
+    fetch(event.request)
+      .then((networkResponse) => {
+        if (networkResponse && networkResponse.status === 200 && event.request.method === 'GET') {
+          const responseClone = networkResponse.clone();
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, responseClone);
+          });
         }
-        return fetch(event.request).catch(() => {
-          // If both fail, optionally return offline page or resource
-          console.warn('[Service Worker] Resource not found in cache or network:', event.request.url);
-        });
+        return networkResponse;
       })
+      .catch(() => caches.match(event.request))
   );
 });
