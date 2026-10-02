@@ -24,7 +24,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <!-- Cache-busting for mobile WebViews -->
-  <link rel="stylesheet" href="style.css?v=4.0">
+  <link rel="stylesheet" href="style.css?v=5.0">
 </head>
 <body>
   <div class="app-container">
@@ -53,7 +53,7 @@
       <!-- Center Spirometer visualizer & Pacer (Always FIRST for instant mobile visibility) -->
       <main class="visualizer-container">
         
-        <!-- Quick Mode & Difficulty Selector Bar (Top Controls) -->
+        <!-- Quick Mode, Difficulty & Sensitivity Selector Bar (Top Controls) -->
         <div class="quick-controls-bar glass-card">
           <div class="quick-control-group">
             <span class="quick-label">Mode:</span>
@@ -74,6 +74,14 @@
               <button id="diff-hard" class="diff-btn" onclick="setDifficulty('hard')">Hard</button>
             </div>
           </div>
+          <div class="quick-control-group">
+            <span class="quick-label">Mic Gain:</span>
+            <div class="sensitivity-group-compact">
+              <button id="sens-high" class="sens-btn active" onclick="setSensitivity('high')">High (Phone)</button>
+              <button id="sens-med" class="sens-btn" onclick="setSensitivity('medium')">Med</button>
+              <button id="sens-low" class="sens-btn" onclick="setSensitivity('low')">Low</button>
+            </div>
+          </div>
         </div>
 
         <!-- Spirometer and Pacer Grid -->
@@ -88,13 +96,13 @@
                 <strong id="live-flow-value">0 cc/s</strong>
               </div>
             </div>
-            <p id="spirometer-live-hint" class="spirometer-live-hint">Blow a steady stream of air into your microphone — only airflow lifts the balls.</p>
+            <p id="spirometer-live-hint" class="spirometer-live-hint">Blow a steady stream of air into your microphone — airflow lifts the balls in real time.</p>
             
             <div class="spirometer-canvas-container">
               <canvas id="spirometer-canvas" width="360" height="420"></canvas>
               <div id="mic-overlay" class="mic-overlay">
-                <i data-lucide="mic-off"></i>
-                <p>Microphone required for live airflow</p>
+                <i data-lucide="mic"></i>
+                <p>Tap below to enable microphone for live airflow</p>
                 <button class="btn btn-primary btn-sm" onclick="enableMicrophone()">Enable Microphone</button>
               </div>
             </div>
@@ -117,7 +125,7 @@
                 </div>
               </div>
             </div>
-            <div id="pacer-hint" class="pacer-hint-text">Enable your mic, then blow to test the balls — or press "Start Training".</div>
+            <div id="pacer-hint" class="pacer-hint-text">Enable your mic and blow into the phone, or tap "Start 5 Reps" for a guided session.</div>
           </div>
           
         </div>
@@ -130,6 +138,9 @@
             </button>
             <button id="btn-session" class="btn btn-primary btn-glowing" onclick="toggleSession()">
               <i data-lucide="play" id="session-icon"></i> <span id="session-text">Start 5 Reps</span>
+            </button>
+            <button id="btn-test-blow" class="btn btn-secondary" title="Press and hold to test ball lift simulation">
+              <i data-lucide="wind"></i> Hold to Test
             </button>
           </div>
           <div class="action-status-row">
@@ -326,13 +337,13 @@
     </div>
   </div>
 
-  <script src="app.js?v=4.0"></script>
+  <script src="app.js?v=5.0"></script>
   
   <!-- PWA Service Worker Registration with Auto-Update -->
   <script>
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=4.0')
+        navigator.serviceWorker.register('sw.js?v=5.0')
           .then(reg => {
             console.log('[PWA] Service Worker registered scope:', reg.scope);
             reg.update(); // Force immediate update

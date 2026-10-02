@@ -35,9 +35,12 @@ if (typeof CanvasRenderingContext2D.prototype.roundRect !== 'function') {
 }
 
 // --- App State ---
-let trainingMode = 'exhale'; // 'inhale' | 'exhale' — exhale matches classic 3-ball exerciser
-let difficulty = 'easy';     // 'easy' | 'medium' | 'hard'
+let trainingMode = 'exhale';     // 'inhale' | 'exhale' — exhale matches classic 3-ball exerciser
+let difficulty = 'easy';         // 'easy' | 'medium' | 'hard'
+let sensitivity = 'high';        // 'high' | 'medium' | 'low' — high sensitivity default for mobile mics
 let micReady = false;
+let isSimulatingBreath = false;  // Touch-and-hold test simulation
+let simIntensity = 0;            // Smooth ramp for test simulation
 
 // Real device flow targets (cc/s) per chamber
 const CHAMBER_FLOWS = [600, 900, 1200];
@@ -46,25 +49,17 @@ const CHAMBER_FLOWS = [600, 900, 1200];
 let audioCtx = null;
 let micStream = null;
 let analyserNode = null;
-let filterNode = null;
-let analyserRawNode = null;
 let highPassNode = null;
 let audioSourceNode = null;
 let animationFrameId = null;
 
-// Noise cancellation state
+// Noise cancellation & baseline state
 let noiseCancellationEnabled = true;
-let noiseSpectrumProfile = null;
-let adaptiveNoiseFloor = 0.03;
-let noiseProfileSnapshots = 0;
-
-// Calibration Benchmarks
-let calAmbient = 0.03;      // Noise floor gate
-let calMaxInhale = 0.35;    // Peak inhale strength baseline
-let calMaxExhale = 0.50;    // Peak exhale strength baseline
+let adaptiveNoiseFloor = 0.015;  // Clean baseline noise floor (strictly clamped <= 0.025)
+let calAmbient = 0.015;          // Safe noise floor gate
+let calMaxInhale = 0.16;         // Inhale peak reference
+let calMaxExhale = 0.22;         // Exhale peak reference
 let isCalibrating = false;
-let breathLikeness = 0;
-let recentRmsSamples = [];
 
 // Session & Pacer State
 let sessionState = 'idle';  // 'idle' | 'prepare' | 'breath' | 'hold' | 'relax'
@@ -165,6 +160,20 @@ window.addEventListener('message', (event) => {
       }
       break;
 
+    case 'AEROFLOW_SET_SENSITIVITY':
+    case 'SET_SENSITIVITY':
+      if (['high', 'medium', 'low'].includes(data.sensitivity)) {
+        setSensitivity(data.sensitivity);
+        emitToHost('AEROFLOW_ACK', { action, success: true, sensitivity: data.sensitivity });
+      }
+      break;
+
+    case 'AEROFLOW_SIMULATE_BLOW':
+    case 'SIMULATE_BLOW':
+      isSimulatingBreath = !!data.active;
+      emitToHost('AEROFLOW_ACK', { action, success: true, active: isSimulatingBreath });
+      break;
+
     case 'AEROFLOW_START_SESSION':
     case 'START_SESSION':
       if (sessionState === 'idle') {
@@ -193,9 +202,10 @@ window.addEventListener('message', (event) => {
     case 'AEROFLOW_PING':
     case 'PING':
       emitToHost('AEROFLOW_PONG', {
-        version: '1.2.0',
+        version: '1.3.0',
         mode: trainingMode,
         difficulty,
+        sensitivity,
         sessionState
       });
       break;
@@ -346,14 +356,33 @@ let mouthpieceGlow = 0;
 
 function updateBallThresholds() {
   const presets = {
-    easy: [0.10, 0.32, 0.55],
-    medium: [0.15, 0.45, 0.72],
-    hard: [0.22, 0.58, 0.85]
+    easy:   [0.08, 0.30, 0.58], // Gentle blow lifts Red, moderate lifts Yellow, strong lifts Green
+    medium: [0.14, 0.42, 0.72],
+    hard:   [0.20, 0.54, 0.85]
   };
   const levels = presets[difficulty] || presets.easy;
   balls.forEach((ball, i) => {
     ball.requiredLevel = levels[i];
   });
+}
+
+function getSensitivityMultiplier() {
+  switch (sensitivity) {
+    case 'high': return 3.2;   // High sensitivity (Default on mobile phone microphones)
+    case 'medium': return 2.0;  // Balanced
+    case 'low': return 1.2;     // Low sensitivity for loud environments
+    default: return 3.2;
+  }
+}
+
+function getDifficultyMax() {
+  const base = (trainingMode === 'inhale') ? 0.12 : 0.16;
+  switch (difficulty) {
+    case 'easy': return base * 0.75;
+    case 'medium': return base * 1.1;
+    case 'hard': return base * 1.6;
+    default: return base * 0.75;
+  }
 }
 
 function intensityToFlow(intensity) {
@@ -370,6 +399,7 @@ window.addEventListener('DOMContentLoaded', () => {
   // Load data from LocalStorage
   loadHistoryLogs();
   loadNoiseSettings();
+  loadSensitivitySettings();
 
   // Render analytical charts
   renderChart();
@@ -378,14 +408,17 @@ window.addEventListener('DOMContentLoaded', () => {
   updateBallThresholds();
   setMode(trainingMode);
 
-  // Setup live audio animation loop (always running, listening to cal values)
+  // Setup test blow button & keyboard shortcut
+  setupTestBlowButton();
+
+  // Setup live audio animation loop (always running)
   requestAnimationFrame(physicsRenderLoop);
 
   // Initialize UI displays
   updateDashboardStats();
   updateStreakPill();
   document.getElementById('pacer-hint').textContent =
-    'Enable your microphone, then blow to test the balls — or press "Start Training" for a guided session.';
+    'Enable your mic and blow into the phone, or tap "Start 5 Reps" for a guided session.';
 
   // Notify Ceaser host app that AeroFlow is ready
   if (isEmbeddedInHost) {
@@ -393,10 +426,49 @@ window.addEventListener('DOMContentLoaded', () => {
     if (badge) badge.classList.remove('hidden');
     document.body.classList.add('embedded-mode');
   }
-  emitToHost('AEROFLOW_READY', { mode: trainingMode, difficulty });
+  emitToHost('AEROFLOW_READY', { mode: trainingMode, difficulty, sensitivity });
 });
 
-// --- Mode and Difficulty Selectors ---
+// Setup manual test blow button (allows testing without mic or in restricted WebViews)
+function setupTestBlowButton() {
+  const btn = document.getElementById('btn-test-blow');
+  if (!btn) return;
+
+  const startBlow = (e) => {
+    if (e.cancelable) e.preventDefault();
+    isSimulatingBreath = true;
+    btn.classList.add('active-blowing');
+  };
+
+  const stopBlow = (e) => {
+    if (e.cancelable) e.preventDefault();
+    isSimulatingBreath = false;
+    btn.classList.remove('active-blowing');
+  };
+
+  btn.addEventListener('mousedown', startBlow);
+  btn.addEventListener('mouseup', stopBlow);
+  btn.addEventListener('mouseleave', stopBlow);
+  btn.addEventListener('touchstart', startBlow, { passive: false });
+  btn.addEventListener('touchend', stopBlow, { passive: false });
+  btn.addEventListener('touchcancel', stopBlow, { passive: false });
+
+  // Spacebar hold support on desktop
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'BUTTON') {
+      isSimulatingBreath = true;
+      btn.classList.add('active-blowing');
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') {
+      isSimulatingBreath = false;
+      btn.classList.remove('active-blowing');
+    }
+  });
+}
+
+// --- Mode, Difficulty & Sensitivity Selectors ---
 function setMode(mode) {
   trainingMode = mode;
   document.getElementById('mode-inhale').classList.toggle('active', mode === 'inhale');
@@ -410,8 +482,8 @@ function setMode(mode) {
   if (micReady) {
     document.getElementById('spirometer-live-hint').textContent =
       mode === 'exhale'
-        ? 'Blow steadily into your microphone — shouting won\'t lift the balls.'
-        : 'Inhale steadily near your microphone — only breath airflow is detected.';
+        ? 'Microphone active! Blow steadily into your phone to lift the balls.'
+        : 'Microphone active! Inhale steadily near your phone to lift the balls.';
   }
 
   emitToHost('AEROFLOW_MODE_CHANGED', { mode });
@@ -425,10 +497,28 @@ function setDifficulty(diff) {
 
   const pacerHint = document.getElementById('pacer-hint');
   if (sessionState === 'idle') {
-    pacerHint.textContent = `Difficulty: ${diff.toUpperCase()}. Blow into your mic to test the balls, or press "Start Training".`;
+    pacerHint.textContent = `Difficulty: ${diff.toUpperCase()}. Blow into your phone to test the balls, or press "Start 5 Reps".`;
   }
 
   emitToHost('AEROFLOW_DIFFICULTY_CHANGED', { difficulty: diff });
+}
+
+function setSensitivity(sens) {
+  sensitivity = sens;
+  document.querySelectorAll('.sens-btn').forEach(btn => btn.classList.remove('active'));
+  const btnId = `sens-${sens === 'medium' ? 'med' : sens}`;
+  document.getElementById(btnId)?.classList.add('active');
+  localStorage.setItem('aeroflow_sensitivity_v2', sens);
+  emitToHost('AEROFLOW_SENSITIVITY_CHANGED', { sensitivity: sens });
+}
+
+function loadSensitivitySettings() {
+  const saved = localStorage.getItem('aeroflow_sensitivity_v2');
+  if (saved && ['high', 'medium', 'low'].includes(saved)) {
+    setSensitivity(saved);
+  } else {
+    setSensitivity('high');
+  }
 }
 
 function setNoiseCancellation(enabled) {
@@ -444,18 +534,19 @@ async function rescanNoiseProfile() {
     await enableMicrophone();
     return;
   }
-  breathLikeness = 0;
-  smoothedIntensity = 0;
-  recentRmsSamples = [];
-  document.getElementById('mic-live-label').textContent = 'Scanning room noise — stay quiet…';
-  await captureNoiseProfile(2000);
-  updateNoiseFloorDisplay();
-  document.getElementById('mic-live-label').textContent = 'Mic live — blow steadily (not shout)';
-  updateInputTypeStatus('idle');
+  document.getElementById('mic-live-label').textContent = 'Recalibrating baseline…';
+  adaptiveNoiseFloor = 0.012;
+  calAmbient = 0.012;
+  saveNoiseSettings();
+  setTimeout(() => {
+    document.getElementById('mic-live-label').textContent = 'Mic active — ready for breath';
+    updateNoiseFloorDisplay();
+    updateInputTypeStatus('idle');
+  }, 400);
 }
 
 function saveNoiseSettings() {
-  localStorage.setItem('aeroflow_noise_v1', JSON.stringify({
+  localStorage.setItem('aeroflow_noise_v2', JSON.stringify({
     noiseCancellationEnabled,
     calAmbient,
     calMaxInhale,
@@ -464,21 +555,27 @@ function saveNoiseSettings() {
 }
 
 function loadNoiseSettings() {
-  const data = localStorage.getItem('aeroflow_noise_v1');
-  if (!data) return;
+  const data = localStorage.getItem('aeroflow_noise_v2');
+  if (!data) {
+    adaptiveNoiseFloor = 0.015;
+    calAmbient = 0.015;
+    return;
+  }
   try {
     const saved = JSON.parse(data);
     if (typeof saved.noiseCancellationEnabled === 'boolean') {
       noiseCancellationEnabled = saved.noiseCancellationEnabled;
     }
-    if (typeof saved.calAmbient === 'number') calAmbient = saved.calAmbient;
-    if (typeof saved.calMaxInhale === 'number') calMaxInhale = saved.calMaxInhale;
-    if (typeof saved.calMaxExhale === 'number') calMaxExhale = saved.calMaxExhale;
+    // Strict clamp so stored noise floor never blocks breath
+    calAmbient = Math.min(Math.max(saved.calAmbient || 0.015, 0.008), 0.025);
+    if (typeof saved.calMaxInhale === 'number') calMaxInhale = Math.min(Math.max(saved.calMaxInhale, 0.08), 0.35);
+    if (typeof saved.calMaxExhale === 'number') calMaxExhale = Math.min(Math.max(saved.calMaxExhale, 0.10), 0.40);
     adaptiveNoiseFloor = calAmbient;
     const toggle = document.getElementById('noise-cancel-toggle');
     if (toggle) toggle.checked = noiseCancellationEnabled;
   } catch (e) {
-    // ignore corrupt settings
+    adaptiveNoiseFloor = 0.015;
+    calAmbient = 0.015;
   }
 }
 
@@ -487,80 +584,15 @@ function updateNoiseFloorDisplay() {
   if (!el) return;
   const floor = getEffectiveNoiseFloor();
   const status = noiseCancellationEnabled ? 'ON' : 'OFF';
-  el.textContent = `Noise cancellation ${status} · gate ${Math.round(floor * 1000)} pts`;
+  el.textContent = `Noise filter ${status} · gate ${Math.round(floor * 1000)} pts`;
 }
 
 function getEffectiveNoiseFloor() {
-  if (!noiseCancellationEnabled) return calAmbient * 0.5;
-  return Math.max(calAmbient, adaptiveNoiseFloor * 1.35);
+  if (!noiseCancellationEnabled) return 0.008;
+  return Math.min(Math.max(adaptiveNoiseFloor, 0.008), 0.025);
 }
 
-// Capture room noise spectrum for spectral subtraction
-function captureNoiseProfile(durationMs = 2000) {
-  return new Promise(resolve => {
-    if (!analyserNode || !audioCtx) {
-      resolve();
-      return;
-    }
-
-    const binCount = analyserNode.frequencyBinCount;
-    const profileSum = new Float32Array(binCount);
-    let snapshotCount = 0;
-    const rmsSamples = [];
-
-    const interval = 80;
-    let elapsed = 0;
-
-    const timer = setInterval(() => {
-      elapsed += interval;
-      const freqData = new Uint8Array(binCount);
-      analyserNode.getByteFrequencyData(freqData);
-
-      for (let i = 0; i < binCount; i++) {
-        profileSum[i] += freqData[i];
-      }
-      snapshotCount++;
-
-      const frame = analyzeAudioFrame({ skipNoiseCancel: true });
-      if (frame) rmsSamples.push(frame.filteredRms);
-
-      if (elapsed >= durationMs) {
-        clearInterval(timer);
-
-        if (snapshotCount > 0) {
-          noiseSpectrumProfile = new Float32Array(binCount);
-          for (let i = 0; i < binCount; i++) {
-            noiseSpectrumProfile[i] = (profileSum[i] / snapshotCount) * 1.15;
-          }
-          noiseProfileSnapshots = snapshotCount;
-        }
-
-        if (rmsSamples.length > 0) {
-          rmsSamples.sort((a, b) => a - b);
-          const median = rmsSamples[Math.floor(rmsSamples.length / 2)];
-          const peak = rmsSamples[rmsSamples.length - 1];
-          calAmbient = Math.max(median * 1.4, peak * 1.1, 0.012);
-          adaptiveNoiseFloor = calAmbient;
-          saveNoiseSettings();
-        }
-
-        resolve();
-      }
-    }, interval);
-  });
-}
-
-function applySpectralNoiseCancellation(freqData) {
-  if (!noiseCancellationEnabled || !noiseSpectrumProfile) return freqData;
-
-  const cleaned = new Uint8Array(freqData.length);
-  for (let i = 0; i < freqData.length; i++) {
-    cleaned[i] = Math.max(freqData[i] - noiseSpectrumProfile[i], 0);
-  }
-  return cleaned;
-}
-
-// --- Microphone Enable (user gesture required by browsers) ---
+// --- Microphone Enable (user gesture required by mobile browsers) ---
 async function enableMicrophone() {
   const btn = document.getElementById('btn-enable-mic');
   if (btn) {
@@ -573,27 +605,27 @@ async function enableMicrophone() {
   if (!success) {
     if (btn) {
       btn.disabled = false;
-      btn.innerHTML = '<i data-lucide="mic"></i> Enable Microphone';
+      btn.innerHTML = '<i data-lucide="mic"></i> Enable Mic';
       if (window.lucide) window.lucide.createIcons();
     }
-    return;
+    return false;
   }
-
-  document.getElementById('mic-live-label').textContent = 'Learning room noise — stay quiet 2s…';
-  await captureNoiseProfile(2000);
 
   micReady = true;
   if (btn) btn.classList.add('hidden');
   document.getElementById('btn-calibrate')?.classList.remove('hidden');
   document.getElementById('btn-rescan-noise')?.classList.remove('hidden');
   document.getElementById('mic-overlay')?.classList.add('hidden');
+  
   document.getElementById('spirometer-live-hint').textContent =
     trainingMode === 'exhale'
-      ? 'Blow steadily into your microphone — shouting won\'t lift the balls.'
-      : 'Inhale steadily near your microphone — stronger breath lifts higher balls.';
-  document.getElementById('mic-live-label').textContent = 'Mic live — blow steadily (not shout)';
+      ? 'Microphone active! Blow steadily into your phone to lift the balls.'
+      : 'Microphone active! Inhale steadily near your phone to lift the balls.';
+  
+  document.getElementById('mic-live-label').textContent = 'Mic active — ready for breath';
   updateInputTypeStatus('idle');
   updateNoiseFloorDisplay();
+  return true;
 }
 
 function updateInputTypeStatus(type) {
@@ -601,8 +633,8 @@ function updateInputTypeStatus(type) {
   if (!el) return;
   const labels = {
     idle: 'Waiting for breath…',
-    breath: 'Airflow detected',
-    rejected: 'Ignored — use steady blow, not voice',
+    breath: '🌬️ Airflow active — balls lifting!',
+    rejected: '🗣️ Voice detected — blow steady air instead of humming',
     noise: 'Background noise filtered out'
   };
   el.textContent = labels[type] || labels.idle;
@@ -612,12 +644,16 @@ function updateInputTypeStatus(type) {
 // --- Audio Core Engine ---
 async function initAudio() {
   if (audioCtx && micStream) {
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    if (audioCtx.state === 'suspended') {
+      try { await audioCtx.resume(); } catch (e) {}
+    }
     return true;
   }
 
+  let stream = null;
+  // 1. First attempt: optimal raw constraints for uncolored airflow turbulence
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
+    stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: false,
         noiseSuppression: false,
@@ -625,210 +661,145 @@ async function initAudio() {
       },
       video: false
     });
-    micStream = stream;
+  } catch (err1) {
+    console.warn("Raw constraints rejected by browser/WebView, trying standard audio constraint...", err1);
+    // 2. Fallback: standard audio constraint for iOS Safari, WebViews, and iframes
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch (err2) {
+      console.error("Microphone access blocked or denied:", err2);
+      showMicError(err2);
+      return false;
+    }
+  }
 
+  try {
+    micStream = stream;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    if (audioCtx.state === 'suspended') {
+      await audioCtx.resume();
+    }
+
     audioSourceNode = audioCtx.createMediaStreamSource(stream);
 
-    // High-pass removes low rumble (fans, AC hum) before breath analysis
+    // Highpass filter at 85Hz strips subsonic handling rumble, gyro pops, and DC offset
     highPassNode = audioCtx.createBiquadFilter();
     highPassNode.type = 'highpass';
-    highPassNode.frequency.value = 120;
+    highPassNode.frequency.value = 85;
     highPassNode.Q.value = 0.7;
-
-    // Bandpass isolates breath turbulence (400Hz–2500Hz)
-    filterNode = audioCtx.createBiquadFilter();
-    filterNode.type = 'bandpass';
-    filterNode.frequency.value = 1350;
-    filterNode.Q.value = 0.8;
 
     analyserNode = audioCtx.createAnalyser();
     analyserNode.fftSize = 1024;
-    analyserNode.smoothingTimeConstant = 0.35;
+    analyserNode.smoothingTimeConstant = 0.3; // Responsive to rapid breath changes
 
-    // Unfiltered analyser — voice/shout detection in low-mid frequencies
-    analyserRawNode = audioCtx.createAnalyser();
-    analyserRawNode.fftSize = 1024;
-    analyserRawNode.smoothingTimeConstant = 0.4;
-
-    audioSourceNode.connect(analyserRawNode);
     audioSourceNode.connect(highPassNode);
-    highPassNode.connect(filterNode);
-    filterNode.connect(analyserNode);
+    highPassNode.connect(analyserNode);
 
-    document.getElementById('mic-live-label').textContent = 'Mic live — blow steadily (not shout)';
     return true;
-  } catch (error) {
-    console.error("Microphone access denied:", error);
-    alert("Microphone permission is required. Allow access in your browser, then click Enable Microphone again.");
+  } catch (e) {
+    console.error("Web Audio initialization failed:", e);
+    showMicError(e);
     return false;
   }
 }
 
-function bandAverage(freqData, binHz, lowHz, highHz) {
-  let sum = 0;
-  let count = 0;
-  for (let i = 0; i < freqData.length; i++) {
-    const hz = i * binHz;
-    if (hz >= lowHz && hz <= highHz) {
-      sum += freqData[i];
-      count++;
-    }
+function showMicError(err) {
+  const overlay = document.getElementById('mic-overlay');
+  if (overlay) {
+    overlay.classList.remove('hidden');
+    overlay.innerHTML = `
+      <i data-lucide="mic-off"></i>
+      <p style="color:#ff6b81; font-weight:600; margin-bottom:4px;">Microphone Access Blocked</p>
+      <p style="font-size:12px; color:#94a3b8; max-width:260px; margin-bottom:12px;">
+        Allow microphone permission in your browser or host app. You can also hold the <strong>Hold to Test</strong> button below anytime.
+      </p>
+      <button class="btn btn-secondary btn-sm" onclick="enableMicrophone()"><i data-lucide="refresh-cw"></i> Retry</button>
+    `;
+    if (window.lucide) window.lucide.createIcons();
   }
-  return count ? (sum / count) / 255 : 0;
 }
 
-function bandSpectralFlatness(freqData, binHz, lowHz, highHz) {
-  const values = [];
-  for (let i = 0; i < freqData.length; i++) {
-    const hz = i * binHz;
-    if (hz >= lowHz && hz <= highHz) {
-      values.push(freqData[i] / 255 + 0.0001);
-    }
+// Read microphone intensity — physical acoustic airflow turbulence
+function getLiveBreathIntensity(dt = 0.016) {
+  // 1. Simulation support (allows testing anytime, or when mic permission is restricted)
+  if (isSimulatingBreath) {
+    simIntensity += (0.94 - simIntensity) * Math.min(dt * 7, 1);
+    const flutter = Math.sin(Date.now() / 70) * 0.02 + Math.sin(Date.now() / 150) * 0.015;
+    const intensity = Math.min(Math.max(simIntensity + flutter, 0), 1.0);
+    return { intensity, isBreath: true, rejectReason: null };
+  } else if (simIntensity > 0.005) {
+    simIntensity += (0 - simIntensity) * Math.min(dt * 12, 1);
+    if (simIntensity <= 0.005) simIntensity = 0;
   }
-  if (values.length < 4) return 0;
-  const logSum = values.reduce((s, v) => s + Math.log(v), 0);
-  const geoMean = Math.exp(logSum / values.length);
-  const arithMean = values.reduce((s, v) => s + v, 0) / values.length;
-  return geoMean / arithMean;
-}
 
-function analyzeAudioFrame(options = {}) {
-  if (!analyserNode || !analyserRawNode || !audioCtx) return null;
+  if (!analyserNode || !audioCtx) {
+    return { intensity: simIntensity, isBreath: simIntensity > 0.05, rejectReason: null };
+  }
 
+  // 2. Measure raw time-domain RMS (physical acoustic air turbulence hitting the mic)
   const timeData = new Uint8Array(analyserNode.fftSize);
   analyserNode.getByteTimeDomainData(timeData);
 
   let sumSquares = 0;
-  let peak = 0;
   for (let i = 0; i < timeData.length; i++) {
-    const sample = (timeData[i] / 128.0) - 1.0;
-    const abs = Math.abs(sample);
-    if (abs > peak) peak = abs;
-    sumSquares += sample * sample;
+    const s = (timeData[i] - 128) / 128.0;
+    sumSquares += s * s;
   }
-  const filteredRms = Math.sqrt(sumSquares / timeData.length);
-  const crestFactor = filteredRms > 0.0001 ? peak / filteredRms : 1;
+  const rms = Math.sqrt(sumSquares / timeData.length);
 
-  let filteredFreq = new Uint8Array(analyserNode.frequencyBinCount);
-  analyserNode.getByteFrequencyData(filteredFreq);
-  if (!options.skipNoiseCancel) {
-    filteredFreq = applySpectralNoiseCancellation(filteredFreq);
+  // 3. Gentle adaptive noise floor (updates only during near-silence < 0.022)
+  if (rms < 0.022) {
+    adaptiveNoiseFloor = adaptiveNoiseFloor * 0.992 + rms * 0.008;
+    if (adaptiveNoiseFloor < 0.006) adaptiveNoiseFloor = 0.006;
+    if (adaptiveNoiseFloor > 0.025) adaptiveNoiseFloor = 0.025; // NEVER mute breath!
   }
 
-  const filteredBinHz = audioCtx.sampleRate / analyserNode.fftSize;
+  const effectiveFloor = getEffectiveNoiseFloor();
+  const netSignal = Math.max(0, rms - effectiveFloor);
 
-  const rawFreq = new Uint8Array(analyserRawNode.frequencyBinCount);
-  analyserRawNode.getByteFrequencyData(rawFreq);
-  const rawBinHz = audioCtx.sampleRate / analyserRawNode.fftSize;
-
-  const airflowBand = bandAverage(filteredFreq, filteredBinHz, 400, 3500);
-  const voiceBand = bandAverage(rawFreq, rawBinHz, 80, 450);
-  const rumbleBand = bandAverage(rawFreq, rawBinHz, 40, 180);
-  const spectralFlatness = bandSpectralFlatness(filteredFreq, filteredBinHz, 500, 3200);
-
-  const noiseCancelledRms = Math.max(filteredRms - getEffectiveNoiseFloor() * 0.5, 0);
-
-  return {
-    filteredRms,
-    noiseCancelledRms,
-    airflowBand,
-    voiceBand,
-    rumbleBand,
-    crestFactor,
-    spectralFlatness
-  };
-}
-
-// Score how likely the sound is steady breath vs shout/speech
-function getBreathLikenessScore(frame) {
-  const airflow = frame.airflowBand;
-  const voice = frame.voiceBand;
-
-  if (airflow < 0.015 && frame.filteredRms < getEffectiveNoiseFloor()) return 0;
-
-  // Blowing: strong turbulent airflow band, weak voice fundamentals
-  const blowRatio = airflow / (voice + 0.006);
-  let score = Math.min(Math.max((blowRatio - 0.6) / 2.0, 0), 1);
-
-  // Breath turbulence is broadband (flatter spectrum); voice has tonal peaks
-  if (frame.spectralFlatness > 0.28) {
-    score = Math.min(1, score * 1.2);
-  } else if (frame.spectralFlatness < 0.12) {
-    score *= 0.45;
+  if (netSignal <= 0.002) {
+    return { intensity: Math.max(0, simIntensity), isBreath: false, rejectReason: null };
   }
 
-  // Shouts produce sharp transient peaks
-  if (frame.crestFactor > 9) score *= 0.15;
-  else if (frame.crestFactor > 6) score *= 0.4;
-  else if (frame.crestFactor > 4.5) score *= 0.7;
+  // 4. Frequency domain inspection for tonal hum/whistle vs broad breath turbulence
+  const freqData = new Uint8Array(analyserNode.frequencyBinCount);
+  analyserNode.getByteFrequencyData(freqData);
 
-  // Steady blow is more stable than a shout burst
-  recentRmsSamples.push(frame.filteredRms);
-  if (recentRmsSamples.length > 10) recentRmsSamples.shift();
-  if (recentRmsSamples.length >= 4) {
-    const mean = recentRmsSamples.reduce((a, b) => a + b, 0) / recentRmsSamples.length;
-    const variance = recentRmsSamples.reduce((s, v) => s + (v - mean) ** 2, 0) / recentRmsSamples.length;
-    const stability = 1 - Math.min(Math.sqrt(variance) / (mean + 0.001) * 2.5, 1);
-    score *= 0.55 + stability * 0.45;
+  let maxBin = 0;
+  let sumBin = 0;
+  let activeBins = 0;
+  for (let i = 0; i < freqData.length; i++) {
+    const v = freqData[i];
+    if (v > maxBin) maxBin = v;
+    sumBin += v;
+    if (v > 15) activeBins++;
+  }
+  const avgBin = freqData.length > 0 ? (sumBin / freqData.length) : 1;
+  const peakToAvg = avgBin > 0 ? (maxBin / avgBin) : 1;
+
+  // Tonal vocal humming/singing concentrates power in 1-2 bins with few active bins
+  let isTonalVoice = false;
+  if (peakToAvg > 8.5 && activeBins < 25 && netSignal > 0.04) {
+    isTonalVoice = true;
   }
 
-  return Math.min(Math.max(score, 0), 1);
-}
+  // 5. Apply Sensitivity and Difficulty Scaling
+  const mult = getSensitivityMultiplier();
+  const targetMax = getDifficultyMax();
+  let intensity = (netSignal * mult) / targetMax;
 
-// Read microphone intensity — noise-cancelled steady breath only
-function getLiveBreathIntensity(dt = 0.016) {
-  if (!analyserNode || !audioCtx) return { intensity: 0, isBreath: false, rejectReason: null };
-
-  const frame = analyzeAudioFrame();
-  if (!frame) return { intensity: 0, isBreath: false, rejectReason: null };
-
-  const noiseFloor = getEffectiveNoiseFloor();
-  const rawSignal = Math.max(
-    noiseCancellationEnabled ? frame.noiseCancelledRms : frame.filteredRms,
-    frame.airflowBand * 0.5
-  );
-
-  // Track ambient drift when quiet
-  if (noiseCancellationEnabled && rawSignal < noiseFloor * 1.15) {
-    adaptiveNoiseFloor = adaptiveNoiseFloor * 0.996 + rawSignal * 0.004;
+  // If user is humming/singing, gently damp intensity, but DO NOT ZERO IT OUT
+  if (isTonalVoice) {
+    intensity *= 0.65;
   }
 
-  if (rawSignal < noiseFloor) {
-    breathLikeness = Math.max(breathLikeness - dt * 6, 0);
-    return { intensity: 0, isBreath: false, rejectReason: null };
-  }
+  intensity = Math.min(Math.max(intensity, 0), 1.0);
+  if (simIntensity > intensity) intensity = simIntensity;
 
-  const likeness = getBreathLikenessScore(frame);
-  if (likeness > breathLikeness) {
-    breathLikeness += (likeness - breathLikeness) * Math.min(dt * 10, 1);
-  } else {
-    breathLikeness += (likeness - breathLikeness) * Math.min(dt * 14, 1);
-  }
+  const isBreath = intensity > 0.03;
+  const rejectReason = isTonalVoice ? 'voice' : null;
 
-  if (breathLikeness < 0.25) {
-    const isVoice = frame.voiceBand > frame.airflowBand * 0.7;
-    const isRumble = frame.rumbleBand > frame.airflowBand * 0.9;
-    return {
-      intensity: 0,
-      isBreath: false,
-      rejectReason: isVoice ? 'voice' : (isRumble ? 'noise' : 'voice')
-    };
-  }
-
-  const maxLimit = (trainingMode === 'inhale') ? calMaxInhale : calMaxExhale;
-  let difficultyFactor = 1.0;
-  if (difficulty === 'easy') difficultyFactor = 0.7;
-  else if (difficulty === 'hard') difficultyFactor = 1.35;
-
-  const targetMax = maxLimit * difficultyFactor;
-  const span = Math.max(targetMax - noiseFloor, 0.001);
-  const normalized = (rawSignal - noiseFloor) / span;
-  const likenessFactor = Math.min(Math.max((breathLikeness - 0.18) / 0.82, 0), 1);
-  const intensity = Math.min(Math.max(normalized, 0), 1) * likenessFactor;
-
-  return { intensity, isBreath: intensity > 0.02, rejectReason: null };
+  return { intensity, isBreath, rejectReason };
 }
 
 // --- Live Physics Visualizer Loop (HTML5 Canvas) ---
@@ -838,9 +809,9 @@ function physicsRenderLoop(timestamp) {
   const dt = Math.min((timestamp - lastTime) / 1000, 0.1); // Cap delta time at 100ms
   lastTime = timestamp;
 
-  // 1. Read input breath intensity (always live when mic is connected)
+  // 1. Read input breath intensity (live audio OR active test simulation)
   let breathIntensity = 0;
-  if (analyserNode) {
+  if (analyserNode || isSimulatingBreath || simIntensity > 0.001) {
     const { intensity: rawIntensity, isBreath, rejectReason } = getLiveBreathIntensity(dt);
     smoothedIntensity += (rawIntensity - smoothedIntensity) * Math.min(dt * 14, 1);
     breathIntensity = smoothedIntensity;
@@ -848,16 +819,18 @@ function physicsRenderLoop(timestamp) {
     const micPercent = Math.round(breathIntensity * 100);
     const flowCc = intensityToFlow(breathIntensity);
     document.getElementById('mic-live-bar').style.width = `${micPercent}%`;
-    document.getElementById('mic-live-label').textContent = micReady
-      ? `${trainingMode === 'exhale' ? 'Blow' : 'Inhale'} strength: ${micPercent}%`
-      : 'Mic inactive — click Enable above';
+    
+    if (micReady || isSimulatingBreath) {
+      document.getElementById('mic-live-label').textContent =
+        `${trainingMode === 'exhale' ? 'Blow' : 'Inhale'} strength: ${micPercent}%`;
+    } else {
+      document.getElementById('mic-live-label').textContent = 'Mic inactive — click Enable Mic';
+    }
     document.getElementById('live-flow-value').textContent = `${flowCc} cc/s`;
 
-    if (micReady) {
+    if (micReady || isSimulatingBreath) {
       if (isBreath) {
         updateInputTypeStatus('breath');
-      } else if (rejectReason === 'noise') {
-        updateInputTypeStatus('noise');
       } else if (rejectReason === 'voice') {
         updateInputTypeStatus('rejected');
       } else {
@@ -1157,7 +1130,9 @@ function calibrateAmbient() {
       progress.classList.add('hidden');
       
       const avgAmbient = values.reduce((a, b) => a + b, 0) / values.length;
-      calAmbient = Math.max(avgAmbient * 1.3, 0.02);
+      calAmbient = Math.min(Math.max(avgAmbient * 1.1, 0.008), 0.025);
+      adaptiveNoiseFloor = calAmbient;
+      saveNoiseSettings();
       
       // Move to Step 2
       document.getElementById('cal-type-label').textContent = trainingMode.toUpperCase();
@@ -1202,7 +1177,7 @@ function calibrateBreathPeak() {
         maxRms = currentRms;
       }
       
-      const relVal = Math.round((currentRms / 0.5) * 100);
+      const relVal = Math.round((currentRms / 0.4) * 100);
       liveText.textContent = `${Math.min(relVal, 100)}%`;
     }
 
@@ -1212,12 +1187,12 @@ function calibrateBreathPeak() {
       progress.classList.add('hidden');
       liveLabel.classList.add('hidden');
 
-      const finalMaxVal = Math.max(maxRms, calAmbient * 1.5);
       if (trainingMode === 'inhale') {
-        calMaxInhale = finalMaxVal;
+        calMaxInhale = Math.min(Math.max(maxRms, 0.08), 0.35);
       } else {
-        calMaxExhale = finalMaxVal;
+        calMaxExhale = Math.min(Math.max(maxRms, 0.10), 0.40);
       }
+      saveNoiseSettings();
 
       // Render Step 3 Results
       document.getElementById('res-ambient').textContent = `${Math.round(calAmbient * 1000)} pts`;
@@ -1230,12 +1205,12 @@ function calibrateBreathPeak() {
 }
 
 // --- Guided Exercise State Machine ---
-function toggleSession() {
+async function toggleSession() {
   if (sessionState === 'idle') {
-    enableMicrophone().then(() => {
-      if (!micReady) return;
-      startTrainingSession();
-    });
+    if (!micReady && !isSimulatingBreath) {
+      await enableMicrophone();
+    }
+    startTrainingSession();
   } else {
     stopTrainingSession();
   }

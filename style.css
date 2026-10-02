@@ -528,7 +528,8 @@ button {
 }
 
 .toggle-group-compact,
-.difficulty-group-compact {
+.difficulty-group-compact,
+.sensitivity-group-compact {
   display: flex;
   background: rgba(0, 0, 0, 0.25);
   border-radius: 8px;
@@ -537,12 +538,28 @@ button {
 }
 
 .toggle-group-compact .toggle-btn,
-.difficulty-group-compact .diff-btn {
-  padding: 6px 12px;
-  font-size: 12px;
+.difficulty-group-compact .diff-btn,
+.sensitivity-group-compact .sens-btn {
+  padding: 6px 10px;
+  font-size: 11.5px;
   border-radius: 6px;
   min-height: 34px;
   border: none;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.sensitivity-group-compact .sens-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-main);
+}
+
+.sensitivity-group-compact .sens-btn.active {
+  background: rgba(0, 210, 211, 0.2);
+  border: 1px solid rgba(0, 210, 211, 0.4);
+  color: var(--accent-blue);
+  box-shadow: 0 0 10px rgba(0, 210, 211, 0.15);
+  font-weight: 700;
 }
 
 /* Spirometer Header Row */
@@ -595,14 +612,36 @@ button {
 
 .action-buttons-row {
   display: flex;
-  gap: 12px;
+  gap: 8px;
   width: 100%;
+  flex-wrap: wrap;
 }
 
 .action-buttons-row .btn {
-  flex: 1;
-  min-height: 46px;
-  font-size: 15px;
+  flex: 1 1 calc(50% - 4px);
+  min-height: 44px;
+  font-size: 13.5px;
+  padding: 10px 12px;
+  white-space: nowrap;
+}
+
+.action-buttons-row #btn-session {
+  flex: 2 1 100%;
+}
+
+#btn-test-blow {
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: pointer;
+}
+
+#btn-test-blow.active-blowing {
+  background: rgba(0, 210, 211, 0.3) !important;
+  border-color: var(--accent-blue) !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 20px rgba(0, 210, 211, 0.6) !important;
+  transform: scale(0.97);
 }
 
 .action-status-row {
