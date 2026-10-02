@@ -82,7 +82,18 @@ let historyLogs = [];
 let historyChart = null;
 
 // --- Ceaser App Host Integration (postMessage Bridge) ---
-const isEmbeddedInHost = window.parent && window.parent !== window;
+const urlParams = new URLSearchParams(window.location.search);
+const isEmbeddedInHost = (window.parent && window.parent !== window) ||
+  urlParams.has('embed') ||
+  urlParams.has('ceaser') ||
+  urlParams.has('app') ||
+  !!window.ReactNativeWebView ||
+  !!window.CeaserChannel;
+
+if (isEmbeddedInHost) {
+  document.documentElement.classList.add('embedded-mode');
+  if (document.body) document.body.classList.add('embedded-mode');
+}
 
 function emitToHost(type, payload = {}) {
   const message = {

@@ -644,8 +644,20 @@ button {
   border-radius: 16px;
   display: flex;
   justify-content: center;
-  padding: 16px;
+  padding: 12px 8px;
   position: relative;
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+#spirometer-canvas {
+  display: block;
+  width: 100%;
+  max-width: 320px;
+  height: auto;
+  aspect-ratio: 360 / 420;
+  margin: 0 auto;
 }
 
 .mic-overlay {
@@ -681,9 +693,11 @@ button {
 
 .spirometer-labels {
   display: flex;
-  justify-content: space-between;
-  margin-top: 16px;
-  padding: 0 10px;
+  justify-content: space-around;
+  margin: 14px auto 0;
+  max-width: 320px;
+  padding: 0 4px;
+  width: 100%;
 }
 
 .label-col {
@@ -1156,3 +1170,278 @@ button {
   font-size: 13px;
   padding-left: 8px;
 }
+
+/* ==========================================================================
+   Mobile-First & Ceaser App Embedded Responsive Enhancements
+   ========================================================================== */
+
+@media (max-width: 768px), (max-height: 720px) and (max-width: 1024px) {
+  body {
+    padding-bottom: 90px; /* Space for thumb-friendly sticky action bar */
+    font-size: 15px;
+    overflow-x: hidden;
+  }
+
+  .app-container {
+    padding: 8px 8px 30px;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .app-header {
+    margin-bottom: 12px;
+    padding: 4px 0;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .logo-area h1 {
+    font-size: 18px;
+  }
+
+  .logo-badge {
+    font-size: 9px;
+    padding: 2px 5px;
+  }
+
+  .header-stats {
+    gap: 6px;
+  }
+
+  .stat-pill {
+    padding: 5px 10px;
+    font-size: 12px;
+    border-radius: 8px;
+  }
+
+  /* Main Layout Re-ordering: Visualizer (Spirometer) appears FIRST on mobile */
+  .main-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .visualizer-container {
+    order: 1;
+    gap: 12px;
+    width: 100%;
+  }
+
+  .visualizer-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Spirometer at the top for immediate access */
+  .spirometer-card {
+    order: 1;
+    padding: 14px 10px;
+  }
+
+  .spirometer-card h3 {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+
+  .spirometer-live-hint {
+    font-size: 12px;
+    margin: -4px 0 10px;
+  }
+
+  /* Compact Guided Breath Pacer */
+  .pacer-card {
+    order: 2;
+    padding: 12px;
+  }
+
+  .pacer-card h3 {
+    font-size: 15px;
+    margin-bottom: 8px;
+  }
+
+  .pacer-outer {
+    min-height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .pacer-circle {
+    width: 110px;
+    height: 110px;
+    box-shadow: 0 0 20px rgba(0, 0, 0, 0.4);
+  }
+
+  .pacer-timer-text {
+    font-size: 24px;
+    margin-top: 2px;
+  }
+
+  .pacer-status-text {
+    font-size: 13px;
+  }
+
+  .pacer-hint-text {
+    font-size: 12px;
+    min-height: 28px;
+    margin-top: 6px;
+  }
+
+  /* Control Panel placed below visualizer on mobile */
+  .control-panel {
+    order: 2;
+    padding: 14px 12px;
+    gap: 14px;
+    width: 100%;
+  }
+
+  .panel-section {
+    padding-bottom: 14px;
+    gap: 12px;
+  }
+
+  .panel-section h2 {
+    font-size: 16px;
+  }
+
+  .toggle-btn, .diff-btn {
+    padding: 8px 4px;
+    font-size: 12px;
+    min-height: 42px;
+  }
+
+  /* Sticky Bottom Action Bar for Easy Thumb Access */
+  .action-section {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    background: rgba(11, 15, 25, 0.95);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    padding: 10px 16px;
+    z-index: 1000;
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.6);
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    border-radius: 16px 16px 0 0;
+    margin: 0;
+  }
+
+  .action-section .btn {
+    flex: 1;
+    max-width: 220px;
+    padding: 11px 18px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  .action-section .rep-counter {
+    font-size: 13px;
+    margin-left: 12px;
+    white-space: nowrap;
+  }
+
+  /* AI Coach card on mobile */
+  .ai-coach-card {
+    padding: 14px 12px;
+  }
+
+  .coach-bubble {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .coach-bubble p {
+    font-size: 13px;
+  }
+
+  .analytics-mini-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .mini-stat {
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .mini-stat .value {
+    font-size: 13px;
+  }
+
+  /* Dashboard Analytics on mobile */
+  .analytics-dashboard {
+    padding: 14px 12px;
+    gap: 14px;
+  }
+
+  .section-header h2 {
+    font-size: 17px;
+  }
+
+  .dashboard-stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .stat-card {
+    padding: 8px 6px;
+    flex-direction: column;
+    text-align: center;
+    gap: 4px;
+  }
+
+  .stat-card i {
+    width: 28px;
+    height: 28px;
+    padding: 5px;
+    margin: 0 auto;
+  }
+
+  .stat-info strong {
+    font-size: 14px;
+  }
+
+  .badges-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .chart-container {
+    min-height: 220px;
+    padding: 8px;
+  }
+}
+
+/* ==========================================================================
+   Ceaser App Embedded Mode (WebView optimizations)
+   ========================================================================== */
+
+body.embedded-mode,
+html.embedded-mode body {
+  background: #070913 !important;
+  padding-bottom: 85px;
+}
+
+body.embedded-mode .app-container {
+  padding: 6px 6px 30px;
+}
+
+body.embedded-mode .app-header {
+  display: none !important; /* Hide redundant logo/streak bar when Ceaser mobile app provides native header */
+}
+
+body.embedded-mode .glass-card {
+  border-radius: 14px;
+}
+
+body.embedded-mode .spirometer-card {
+  padding: 12px 8px;
+}
+

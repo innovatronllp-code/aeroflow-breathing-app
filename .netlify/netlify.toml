@@ -1,0 +1,39 @@
+headersOrigin = "config"
+plugins = []
+redirects = []
+
+[functions]
+
+[functions."*"]
+
+[build]
+publish = "C:\\Users\\iniya\\kaggle\\agy2-projectsmy\\blow"
+publishOrigin = "config"
+
+[build.environment]
+
+[build.processing]
+
+[build.processing.css]
+
+[build.processing.html]
+
+[build.processing.images]
+
+[build.processing.js]
+
+[build.services]
+
+[[headers]]
+for = "/*"
+
+[headers.values]
+Permissions-Policy = "microphone=*"
+Access-Control-Allow-Origin = "*"
+X-Frame-Options = "ALLOWALL"
+
+[[headers]]
+for = "/sw.js"
+
+[headers.values]
+Cache-Control = "public, max-age=0, must-revalidate"
